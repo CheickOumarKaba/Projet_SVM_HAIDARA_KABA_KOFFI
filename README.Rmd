@@ -1,0 +1,280 @@
+---
+title: 'Implémentation des SVM et performances : Cas de la detection de fraude sur
+  les cartes de crédits'
+author: "Mohamed HAIDARA, Cheick-Oumar KABA, Ange Michel KOFFI"
+date: "`r format(Sys.time(), '%d %B, %Y')`"
+output:
+  html_document:
+    df_print: paged
+  pdf_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(comment = NA)
+```
+
+
+```{r source, include=FALSE}
+newdata <-readRDS("data\\newdata.rds")
+base <- readRDS("data\\baseinit.rds")
+library(ROCR)
+library(rmarkdown)
+library(e1071)
+library(ISLR)
+library(DMwR)
+library(DT)
+library(kableExtra)
+library(tinytex)
+```  
+  
+```{r, include=FALSE}
+options(tinytex.verbose = TRUE)
+```
+
+# __<u>Contexte de l'étude</u>__
+
+Cette étude s'inscrit dans le cadre de l'implémentation des performances des modèles SVM (Machines à vecteurs de support) dans le cadre de la détection de fraude sur les cartes de crédit.  
+Pour ce faire, nous disposons d'une base de données disponibe sur le site Kaggle.  
+Cette base contient 284 807 transactions.    
+  
+##  __I) <u>Visualisation et transformation des données</u>__ 
+  
+
+###  __1) <u>Visualisation de la base de données</u>__  
+  
+Voici un extrait de la base :  
+
+
+```{r, echo=FALSE}
+paged_table(base)
+```  
+  
+  
+####  __<u>Proportion de de la variable d'interet "Class" dans la base de données</u>__ 
+  
+0 : cas de non fraude, 1 : Cas de fraude
+```{r, echo=FALSE}
+prop.table(table(base$Class))
+```  
+
+On remarque un déséquilibre dans les modalités de la variable d'intéret. La classification non équilibrée pose des problèmes à de nombreux algorithmes d'apprentissage.Dans un soucis d'éfficacité dans l'estimation de notre modèle, il convient tout d'abord de procéder à un reéquilibrage des donnnées.  
+  
+###  __2) <u>Fonction SMOTE de R et réequilibrage des données</u>__
+  
+La fonction SMOTE du package "DMwR" de R permet de gérer les problèmes de classification non équilibrée. L’idée générale de cette méthode est de générer artificiellement de nouveaux exemples de la classe minoritaire en utilisant les voisins les plus proches et à sous-échantillonner la classe majoritaire pour aboutir à un jeu de données plus équilibré.  
+  
+####  __<u>Les arguments de la fonction SMOTE</u>__
+  
+*Perc.over* : controle la quantité du sur-échantillonnage de la classe minoritaire.   
+*Perc.under* : controle la quantité du sous-échantillonnage de la classe majoritaire.  
+*k* : Nombre indiquant le nombre de voisins les plus proches utilisés pour générer les nouveaux exemples de la classe minoritaire.  
+
+[__***Pour plus de détails sur la fonction SMOTE de R, cliquez ici***__](https://www.rdocumentation.org/packages/DMwR/versions/0.4.1/topics/SMOTE)  
+
+Nous créons ainsi une nouvelle base de données contenant **`r nrow(newdata)`** lignes qui nous servira pour la modélisation. Cette nouvelle base admet la répartition suivante pour la variable d'intérêt "Class" :  
+
+```{r, echo=FALSE}
+prop.table(table(newdata$Class))
+```  
+  
+##  __II) <u>Implémentation des SVM sur la base de données</u>__  
+  
+Les SVM (Machines à Vecteur de Support, ou encore séparateurs à vaste marge) sont des techniques d'apprentissage supervisé qui s'inscrivent dans le cadre de la résolution de problèmes d'apprentissage. Ces méthodes reposent sur deux notions clés : les notions de marge maximale et de fonction de noyau (kernel).   
+Selon que l'on soit en présence d'un échantillon linéairement séparable ( moins probable, mais utile pour expliquer de façon simple le fonctionnement des SVM ) soit non linéairement séparable, le principe fondamentale des SVM consiste à partir d'un jeu d'entré X, à trouver une frontière séparatrice sur l'échantillon d'apprentissage qui discrmine entre les classes de la variable d'intéret Y.  
+  
+###  __1) <u>Principe du SVM</u>__  
+
+  
+####  __<u>Cas d'un échantillon linéairement séparable</u>__  
+
+Dans le cas des échantillons linéairement séparables,l'algorithme des SVM consiste à déterminer sur l'échantillon d'apprentissage la frontière de séparation optimale. Celle-ci est obtenue par un programme de maximisation la marge. La marge désigne la distance entre la frontière (hyperplan) de séparation et les observations les plus proches. Ces derniers sont appelés vecteurs supports.  
+
+####  __<u>Cas d'un échantillon non linéairement séparable</u>__  
+
+Dans le cas où les données ne sont pas linéairement séparables, la deuxième idée clé des SVM est de transformer l'espace de représentation des données d'entrée en un espace de plus grande dimension en utilisant une fonction noyau (Kernel) qui ne nécessite pas la connaissance explicite de la transformation à appliquer pour le changement d'espace. La séparation parfaite dans ce cas de figure paraît comme une vue de l’esprit. En pratique, il arrive que des individus soient du mauvais côté de la frontière. On introduit ainsi des variables de relaxation des contraintes de classification appelées variables "ressort". On admet donc qu'il peut y avoir des erreurs dans notre modèle, qu'il convient donc de contrôler. On introduit alors un paramètre de pénalisation C des erreurs qui contrôle par ailleurs les risques de sur-apprentissage ou de sous-appprentissage.
+
+###  __1) <u>Algorithme d'implémentation des SVM</u>__  
+  
+<u>1ère étape</u>: Sélection de la fonction Kernel sur l'échantillon d'apprentissage. Quelques kernels usuels :  
+- **Linéaire** : $u'v$   
+- **Polynomial** : $(\gamma u'v+coef0)^{degree}$   
+- **Radial**  : $exp(-\gamma|u-v|^2)$  
+- **Sigmoïde** : $tanh(\gamma u' v + coef0)$  
+$\gamma, degree, coef0$ désignant les hyperparamètres selon la fonction noyau choisit.  
+  
+<u>2ème étape</u> : Sélection du paramètre de pénalisation C  sur l'échantillon d'apptentissage
+
+<u>3ème étape</u> : Mesure de la performance prédictive sur l'échantillon test  
+  
+**<u>Remarque</u>** : Dans la pratique, les performances du SVM sont très sensibles au choix des hyper-paramètres des fonctions noyaux et du paramètre de pénalisation. Ainsi, une étape intermédiaire consiste à trouver les valeurs optimales de ces paramètres avant d'étudier la performance du modèle. Une solution consiste à déterminer ces hyper-paramètres par validation croisée sur l'échantillon d'apprentissage.  
+  
+###  __2) <u>Cas pratique : application des SVM au cas de la détection de fraude sur les cartes de crédit </u>__  
+  
+####  __<u>Cas échantillon linéairement/non linéairement séparable</u>__  
+  
+Nous réalisons une représentation de quelques variables explicatives en fonction des modalités de la variable d'intérêt "Class" de la base pour avoir une idée du cas d'échantillon auquel nous sommes confronté.
+```{r, echo= FALSE,message=FALSE,warning=FALSE}
+attach(newdata)
+par(mfrow=c(3,3))
+plot(V1,V2,col=c("blue","red")[as.factor(Class)])
+plot(V3,V4,col=c("blue","red")[as.factor(Class)])
+plot(V5,V6,col=c("blue","red")[as.factor(Class)])
+plot(V7,V8,col=c("blue","red")[as.factor(Class)])
+plot(V9,V10,col=c("blue","red")[as.factor(Class)])
+plot(V11,V12,col=c("blue","red")[as.factor(Class)])
+plot(V12,V14,col=c("blue","red")[as.factor(Class)])
+plot(V15,V16,col=c("blue","red")[as.factor(Class)])
+plot(Amount,V28,col=c("blue","red")[as.factor(Class)])
+```  
+  
+Nous avons donc affaire à un échantillon non linéairement séparable.  
+  
+####  __<u>Echantillon d'apprentissage / échantillon test</u>__  
+  
+Nous choisissons d'utiliser 70% des observations de l'écantillon initial comme échantillon d'apprentissage (newdata.train) et les 30% restants comme notre échantillon test (newdata.test).  
+```{r, echo=FALSE}
+train=sample(1:nrow(newdata),3100)
+newdata.train=newdata[train,]
+newdata.test=newdata[-train,]
+newdata.class=newdata$Class[-train]
+```   
+
+####  __<u>Sélection des hyper-paramètres optimaux</u>__  
+  
+La fonction tune(svm...) du package "e1071" de R nous donne la possiblité de déterminer automatiquement par validation croisée la fonction kernel et les valeurs des hyper-paramètres optimaux associés de façon automatique.  
+Ici nous faisons une validation croisée 10-Fold avec différentes valeurs des hyper-paramètres sur l'échantillon d'apprentissage. La syntaxe est la suivante : 
+```{r, echo=TRUE, eval=FALSE}
+obj <- tune(svm, Class ~ ., data = newdata.train, ranges = 
+       list(kernel=c('linear','polynomial','radial', 'sigmoid'),
+       cost =c(0.1,0.5,1.0,2.0,10),gamma=c(0.01,0.1,0.5,1,2)), 
+       tunecontrol = tune.control(sampling="cross"))
+```  
+  
+Nous obtenons le résultat suivant :  
+![Résultat du tune(svm...)](C:/Users/cheic/Documents/GitHub/daishi/Appli final/Appli/Images/tune_svm.png)
+  
+Le taux d'erreur minimal sur l'échantillon d'apprentissage est obtenu en utilisant un kernel radial, pour une valeur optimale de l'hyper-paramètre $\gamma$ égale à 0.1 et à 10 pour le paramètre de pénalisation C.  
+  
+####  __<u>Evaluation du meilleur modèle sur l'échantillon d'apprentissage</u>__  
+  
+Nous réalisons un modèle SVM sur l'échantillon d'apprentissage  
+
+```{r, echo=TRUE}
+svm.rad.best <- svm(Class ~.,data=newdata,subset=train,kernel="radial",probability=T,gamma=0.1,cost=10)
+summary(svm.rad.best)
+```  
+
+  
+####  __<u>Performance prédictive du meilleur modèle sur l'échantillon test</u>__  
+  
+<u>**matrice de confusion**</u> 
+  
+```{r, echo=FALSE}
+pred.rad.best <- predict(svm.rad.best,newdata.test[,-31],probability = T)
+err.pred.rad.best=mean(pred.rad.best!=newdata.class)
+```  
+
+```{r, echo=FALSE}
+table(pred.rad.best,newdata.class)
+```  
+
+<u>**taux d'erreur**</u>
+  
+```{r, echo=FALSE}
+print(err.pred.rad.best)
+```  
+
+<u>**Courbe ROC**</u>  
+  
+```{r, echo=FALSE}
+svm.rad.best.probs=attributes(pred.rad.best)$probabilities[,"1"]
+svm.rad.best.pred=prediction(svm.rad.best.probs,newdata.class)
+perf.rad.best <- performance(svm.rad.best.pred,"tpr","fpr")
+auc.rad.best <- performance(svm.rad.best.pred,"auc")
+```  
+  
+```{r, echo=FALSE}
+plot(perf.rad.best,col="red",xlab="1-Spécificité",ylab="Sensitivité")
+abline(0,1)
+```  
+
+<u>**AUC**</u>   
+
+```{r, echo=FALSE}
+print(auc.rad.best@y.values)
+```  
+  
+<u>**Indice de Gini**</u>  
+  
+```{r, echo=FALSE}
+auc.best=as.numeric(auc.rad.best@y.values)
+gini.rad.best=2*auc.best-1
+print(gini.rad.best)
+```  
+  
+###  __3) <u>Comparaison des performances du meilleur modèle à d'autres kernels et benchmarks</u>__  
+  
+<u>**Courbe ROC**</u>  
+  
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+# kernel linéaire
+svm.fit.lin1 <- svm(Class ~ . , data=newdata,subset=train, kernel="linear",probability=T,cost=10)
+pred.svm.lin1 <- predict(svm.fit.lin1,newdata.test[,-31],probability = T)
+svm.fit.lin1.probs=attributes(pred.svm.lin1)$probabilities[,"1"]
+svm.fit.lin1.pred=prediction(svm.fit.lin1.probs,newdata.class)
+perf.svm.lin1 <- performance(svm.fit.lin1.pred,"tpr","fpr")
+plot(perf.svm.lin1,col="green",xlab="1-Spécificité",ylab="Sensitivité")
+abline(0,1,col="black")
+auc.lin1 <- performance(svm.fit.lin1.pred,"auc")
+roc1=auc.lin1@y.values
+
+# kernel polynomial 
+svm.fit.poly <- svm(Class ~ . , data=newdata,subset=train, kernel="polynomial",probability=T,gamma=0.1)
+pred.svm.poly <- predict(svm.fit.poly,newdata.test[,-31],probability = T)
+svm.fit.poly.probs=attributes(pred.svm.poly)$probabilities[,"1"]
+svm.fit.poly.pred=prediction(svm.fit.poly.probs,newdata.class)
+perf.svm.poly <- performance(svm.fit.poly.pred,"tpr","fpr")
+plot(perf.svm.poly,col="yellow",add=T,xlab="1-Spécificité",ylab="Sensitivité")
+
+# kernel radial
+plot(perf.rad.best,col="red",add=T,xlab="1-Spécificité",ylab="Sensitivité")
+
+# kernel sigmoide
+svm.fit.sig <- svm(Class ~ . , data=newdata,subset=train, kernel="sigmoid", probability=T,gamma=0.1,cost=10)
+pred.svm.sig <- predict(svm.fit.sig,newdata.test[,-31],probability = T)
+svm.fit.sig.probs=attributes(pred.svm.sig)$probabilities[,"1"]
+svm.fit.sig.pred=prediction(svm.fit.sig.probs,newdata.class)
+perf.svm.sig <- performance(svm.fit.sig.pred,"tpr","fpr")
+plot(perf.svm.sig,add=T,col="gray",xlab="1-Spécificité",ylab="Sensitivité")
+
+# regression logistique
+glm.fit=glm(Class~.,newdata,subset=train,family=binomial)
+glm.probs=predict(glm.fit,newdata.test, type="response")
+glm.pred=rep(0,1328)
+glm.pred[glm.probs>0.5]=1
+glm.fit.roc=prediction(glm.probs,newdata.class)
+perf.glm.roc <- performance(glm.fit.roc,"tpr","fpr")
+plot(perf.glm.roc,col="blue",add=T,xlab="1-Spécificité",ylab="Sensitivité")
+
+legend("bottomright", legend=c("Kernel linéaire","Kernel polynomial","Kernel Radial","Kernel sigmoïde", "Regression logistique"),
+       col=c("green","yellow","red","gray","blue"), lty=1:2, cex=0.8)
+```  
+  
+# __<u>Conclusion</u>__  
+  
+Les SVM, méthodes d'apprentissage supervisé peuvent se montrer très utiles pour plusieurs raisons, à savoir leur :  
+• Capacité à traiter de grandes dimensionnalités  
+• Traitement des problèmes non linéaires avec le choix des noyaux  
+• Robustesse par rapport aux points aberrants (contrôlée avec le paramètre C)  
+• Robustesse par rapport aux problèmes de multicolinéarité 
+Cependant, cette technique presénte également quelques inconvénients, qui sont :  
+• La difficulté à identifier les bonnes valeurs des paramètres (et sensibilité aux paramètres)  
+• Le problème lié au cas d'échantillon déséquilibré  
+• La difficulté d’interprétations (exemple : pertinence des variables)  
+  
+Nous avons construit un démonstrateur en ligne avec R shiny qui vous permettra de vous rendre compte par vous même de la facilité d'emploi des SVM, de visualiser ses performances en jouant sur le choix des kernels et des hyper-paramètres dans le cadre de la détection de fraude sur les cartes de crédit. Ce démonstrateur vous permettra par aillleurs de Comparez les performances des SVM à celle de la régression logistique. 
+
+
+
+  
+[__***Télécharger ce document***__](https://github.com/CheickOumarKaba/Projet_SVM_HAIDARA_KABA_KOFFI/blob/master/README.pdf) 
